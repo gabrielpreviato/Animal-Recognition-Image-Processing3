@@ -1,5 +1,5 @@
 from flask import Flask, render_template
-from flask import request
+from flask import request, jsonify
 
 import skimage.color
 import skimage.transform
@@ -11,8 +11,7 @@ import numpy as np
 
 import skimage
 
-
-
+import uuid
 
 
 app = Flask(__name__)
@@ -49,33 +48,41 @@ def error500(error):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == "POST":
-        upload_file = request.files['image_name']
-        filename = upload_file.filename
-        print('The filename that has been uploaded is ', filename)
-        # know the extension of filename
-        # all only .jpg, .png, .jpeg, PNG
-        ext = filename.split('.')[-1]
-        print('The extension of the filename is ', ext)
-        if ext.lower() in ['png', 'jpg', 'jpeg']:
-            # saving the image
-            path_save = os.path.join(UPLOAD_PATH, filename)
-            upload_file.save(path_save)
-            print('File saved sucessfully')
-            # send to pipeline model
-            results = pipeline_model(path_save, scaler, model_svc)
-            hei = getheight(path_save)
-            print(results)
-            return render_template('upload.html', fileupload=True, extension=False, data=results,
-                                   image_filename=filename, height=hei)
+        print('The request method is POST')
+        if request.headers['Content-Type'] == 'application/octet-stream':
+            # upload_file = request.data
+            filename = uuid.uuid4().hex
+            print('The filename that has been uploaded is ', filename)
+            # know the extension of filename
+            # all only .jpg, .png, .jpeg, PNG
+            ext = 'jpg'
+            print('The extension of the filename is ', ext)
+            if ext.lower() in ['png', 'jpg', 'jpeg']:
+                # saving the image
+                path_save = os.path.join(UPLOAD_PATH, filename)
+                # upload_file.save(path_save)
+                with open(path_save, 'wb') as f:
+                    f.write(request.data)
+                    f.close()
+                print('File saved sucessfully')
+                # send to pipeline model
+                results = pipeline_model(path_save, scaler, model_svc)
+                hei = getheight(path_save)
+                print(results)
+                return jsonify(
+                    results
+                )
+                #return render_template('upload.html', fileupload=True, extension=False, data=results,
+                #                    image_filename=filename, height=hei)
 
+
+            else:
+                print('We only accept : .jpg, .png, .jpeg')
+
+                return render_template('upload.html', extension=True, fileupload=False)
 
         else:
-            print('We only accept : .jpg, .png, .jpeg')
-
-            return render_template('upload.html', extension=True, fileupload=False)
-
-    else:
-        return render_template('upload.html', fileupload=False, extension=False)
+            return render_template('upload.html', fileupload=False, extension=False)
 
 
 @app.route('/about/')
@@ -122,8 +129,12 @@ def pipeline_model(path, scaler_transform, model):
     top_prob = predicted_prob[top_5_prob_ind]
 
     top_dict = dict()
+    top = 0.0
     for key, val in zip(top_labels, top_prob):
-        top_dict.update({key: str(np.round(val,2)*100) + " %"})
+        if val > top:
+            top = val
+            top_dict = {"pred": key, "probability": val}
+        # top_dict.update({key: str(np.round(val,2)*100) + " %"})
 
     return top_dict
 
